@@ -4,10 +4,13 @@ from pathlib import Path
 import sys
 import datetime
 import subprocess
+import json
+import tempfile
 
 WIDTH = 720
 PRESET = "fast"
 MAXFPS = 30
+AUDIO_KBPS = 96
 CRF = 27
 
 def run(cmd):
@@ -81,7 +84,7 @@ for i, (path, duration_s, bitrate_kbps, original_mtime, original_size) in enumer
             "-preset", PRESET,
             "-crf", str(CRF),
             "-c:a", "aac",
-            "-b:a", "96k",
+            "-b:a", f"{AUDIO_KBPS}k",
             str(temp_file)
         ])
 
