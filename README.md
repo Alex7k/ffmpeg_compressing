@@ -1,6 +1,6 @@
-# FFmpeg dynamic batch video compression
+# FFmpeg batch video compression
 
-Compress a directory of videos dynamically based on length
+Compress a directory of **.mp4** video files
 
 ## Prerequisites
 
@@ -14,3 +14,7 @@ tested on windows 11
 ```python
 py dynamic_compress_folder.py "path/to/directory"
 ```
+
+## Notes
+
+- Only **.mp4** is supported for now
