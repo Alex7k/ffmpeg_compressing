@@ -8,10 +8,10 @@ import json
 import tempfile
 
 WIDTH = 720
-PRESET = "fast"
+PRESET = "medium"
 MAXFPS = 30
-AUDIO_KBPS = 96
-CRF = 27
+AUDIO_KBPS = 128
+CRF = 25
 
 def run(cmd):
     subprocess.run(cmd, check=True)
@@ -48,6 +48,26 @@ if not PATH.exists() or not PATH.is_dir():
 
 print("SelectedPath:", PATH)
 
+STATE_PATH = Path(tempfile.gettempdir()) / (
+    f"ffcompress_done_w{WIDTH}_fps{MAXFPS}_crf{CRF}_p{PRESET}_ab{AUDIO_KBPS}.json"
+)
+def load_state() -> dict:
+    try:
+        return json.loads(STATE_PATH.read_text("utf-8"))
+    except FileNotFoundError:
+        return {}
+    except Exception:
+        return {}
+
+def save_state(state: dict) -> None:
+    STATE_PATH.write_text(json.dumps(state, separators=(",", ":")), "utf-8")
+
+def sig(p: Path) -> list:
+    st = p.stat()
+    return [st.st_size, int(st.st_mtime)]
+
+state = load_state()
+
 # collect video files sorted by creation time ascending
 vid_paths = sorted([p for p in PATH.glob("*.mp4") if not p.stem.endswith("_temp")], key=lambda p: p.stat().st_mtime)
 if not vid_paths:
@@ -65,16 +85,22 @@ for vid_path in vid_paths:
     items.append((vid_path, dur, bitrate, mtime, size))
 
 total_saved_bytes = 0
+saved_bytes = 0
 
 print("Starting processing...")
 for i, (path, duration_s, bitrate_kbps, original_mtime, original_size) in enumerate(items, start=1): # index starts at 1
     print("")
     print("="*60)
     print(f"[{i}/{len(items)}] - {path.name} - duration: {str(datetime.timedelta(seconds=duration_s))} - current bitrate: {bitrate_kbps} kbps - current size: {sizeof_fmt(original_size)}")
+    resolved_path = str(path.resolve())
+    if state.get(resolved_path) == sig(path):
+        print("Already handled for this profile; skipping.")
+        continue
 
     temp_file = path.with_name(path.stem + "_temp.mp4")
 
     ok = False
+    discarded = False
     try:
         run([
             "ffmpeg", "-y",
@@ -90,22 +116,18 @@ for i, (path, duration_s, bitrate_kbps, original_mtime, original_size) in enumer
 
         if temp_file.exists():
             temp_size = temp_file.stat().st_size
-            if temp_size >= original_size:
-                print(f"Compressed file not smaller ({temp_size} >= {original_size}); discarding.")
-                try:
-                    temp_file.unlink()
-                except Exception:
-                    pass
-                ok = False
+            saved_bytes = original_size - temp_size
+            if saved_bytes <= 0:
+                print(f"Compressed file not smaller ({sizeof_fmt(temp_size)} >= {sizeof_fmt(original_size)}); discarding.")
+                discarded = True
             else:
-                path.unlink()
-                temp_file.rename(path)
+                os.replace(temp_file, path)
                 os.utime(path, (original_mtime, original_mtime))
                 ok = True
     except subprocess.CalledProcessError:
         ok = False
     finally:
-        if not ok and temp_file.exists():
+        if temp_file.exists():
             try:
                 temp_file.unlink()
             except Exception:
@@ -113,12 +135,18 @@ for i, (path, duration_s, bitrate_kbps, original_mtime, original_size) in enumer
 
         if ok:
             print("Compression OK.")
-            saved_bytes = original_size - path.stat().st_size
             total_saved_bytes += saved_bytes
             print(f"Saved {sizeof_fmt(saved_bytes)}")
+        elif discarded:
+            print("No gain; skipped.")
         else:
             print("FAILED!")
 
+        # mark as handled (after success or no-gain discard)
+        if ok or discarded:
+            state[resolved_path] = sig(path)
+            save_state(state)
+
+
 print("All videos processed.")
 print(f"Total saved: {sizeof_fmt(total_saved_bytes)}")
-breakpoint()
