@@ -1,4 +1,3 @@
-import subprocess
 import os
 from pathlib import Path
 import sys
@@ -23,15 +22,18 @@ def sizeof_fmt(num, suffix="B"): # https://stackoverflow.com/questions/1094841/g
         num /= 1024.0
     return f"{num:.1f}Yi{suffix}"
 
-def get_duration_seconds(path: Path) -> int:
-    out = subprocess.check_output([
-        "ffprobe",
-        "-v", "error",
-        "-show_entries", "format=duration",
-        "-of", "default=noprint_wrappers=1:nokey=1",
-        str(path)
-    ], text=True).strip()
-    return int(float(out))
+def get_duration_seconds(path: Path) -> int | None:
+    try:
+        out = subprocess.check_output([
+            "ffprobe",
+            "-v", "error",
+            "-show_entries", "format=duration",
+            "-of", "default=noprint_wrappers=1:nokey=1",
+            str(path)
+        ], text=True).strip()
+        return int(float(out))
+    except (subprocess.CalledProcessError, ValueError):
+        return None
 
 def get_avg_bitrate_kbps(path: Path, duration_s: int) -> int:
     if duration_s <= 0:
@@ -77,12 +79,26 @@ print(f"Found {len(vid_paths)} video(s).")
 
 print("Consolidating data of videos...")
 items = []
+invalid_files = []
 for vid_path in vid_paths:
     dur = get_duration_seconds(vid_path)
+    if dur is None:
+        print(f"Skipping invalid/unreadable file: {vid_path}")
+        invalid_files.append(vid_path)
+        continue
     bitrate = get_avg_bitrate_kbps(vid_path, dur)
     size = vid_path.stat().st_size
     mtime = vid_path.stat().st_mtime
     items.append((vid_path, dur, bitrate, mtime, size))
+
+if not items:
+    print("No valid .mp4 files to process.")
+    if invalid_files:
+        print(f"Skipped invalid files: {len(invalid_files)}")
+    sys.exit(0)
+
+if invalid_files:
+    print(f"Skipped invalid files: {len(invalid_files)}")
 
 total_saved_bytes = 0
 saved_bytes = 0
