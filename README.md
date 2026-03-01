@@ -11,7 +11,14 @@ tested on windows 11
 
 ## Usage
 
-```python
+```pwsh
+# create venv (optional)
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+
+# install dependencies
+pip install -r requirements.txt
+# run script
 py dynamic_compress_folder.py "path/to/directory"
 ```
 
